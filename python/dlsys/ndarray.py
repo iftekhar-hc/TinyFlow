@@ -97,6 +97,36 @@ class NDArray(object):
         """context of this array"""
         return self.handle.contents.ctx
 
+    @property
+    def data_ptr(self):
+        """Raw device/host pointer address as integer."""
+        return int(self.handle.contents.data or 0)
+
+    @property
+    def size(self):
+        """Total number of elements."""
+        n = 1
+        for dim in self.shape:
+            n *= int(dim)
+        return n
+
+    @property
+    def nbytes(self):
+        """Total size in bytes (float32)."""
+        return self.size * 4
+
+    @property
+    def __cuda_array_interface__(self):
+        """Zero-copy CUDA Array Interface v3 for Triton / PyTorch interoperability."""
+        if not is_gpu_ctx(self.ctx):
+            raise TypeError("__cuda_array_interface__ is only valid for GPU NDArrays")
+        return {
+            "shape": self.shape,
+            "typestr": "<f4",
+            "data": (self.data_ptr, False),
+            "version": 3,
+        }
+
     def __setitem__(self, in_slice, value):
         """Set ndarray value"""
         if (not isinstance(in_slice, slice) or
