@@ -1,8 +1,46 @@
 from __future__ import absolute_import
 
 import ctypes
-from ._base import _LIB
+from ._base import _LIB, check_call
 from . import ndarray as _nd
+
+
+def get_memory_stats(dev_id=0):
+    """Query the C++ caching GPU allocator telemetry for the given device."""
+    active = ctypes.c_size_t(0)
+    peak = ctypes.c_size_t(0)
+    reserved = ctypes.c_size_t(0)
+    malloc_cnt = ctypes.c_size_t(0)
+    check_call(_LIB.DLGpuGetMemoryStats(
+        ctypes.c_int(dev_id),
+        ctypes.byref(active),
+        ctypes.byref(peak),
+        ctypes.byref(reserved),
+        ctypes.byref(malloc_cnt),
+    ))
+    return {
+        "active_bytes": int(active.value),
+        "peak_bytes": int(peak.value),
+        "reserved_bytes": int(reserved.value),
+        "malloc_count": int(malloc_cnt.value),
+    }
+
+
+def reset_peak_memory_stats(dev_id=0):
+    """Reset peak active memory bytes in the C++ GPU allocator."""
+    check_call(_LIB.DLGpuResetPeakMemoryStats(ctypes.c_int(dev_id)))
+
+
+def empty_cache(dev_id=0):
+    """Release all cached free blocks in the C++ GPU memory pool."""
+    check_call(_LIB.DLGpuEmptyCache(ctypes.c_int(dev_id)))
+
+
+def set_use_memory_pool(use_pool, dev_id=0):
+    """Enable or disable the C++ caching memory pool (vs raw cudaMalloc/cudaFree)."""
+    check_call(_LIB.DLGpuSetUseMemoryPool(
+        ctypes.c_int(dev_id), ctypes.c_int(1 if use_pool else 0)))
+
 
 
 def array_set(arr, value):

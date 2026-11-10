@@ -199,6 +199,10 @@ def array(arr, ctx=cpu(0)):
     return ret
 
 
+_gpu_alloc_calls = 0
+_base_malloc_count = 0
+
+
 def empty(shape, ctx=cpu(0)):
     """Create an empty array given shape and device
     Parameters
@@ -212,9 +216,66 @@ def empty(shape, ctx=cpu(0)):
     arr : ndarray
         The array dlsys supported.
     """
+    global _gpu_alloc_calls
     shape = c_array(ctypes.c_int64, shape)
     ndim = ctypes.c_int(len(shape))
     handle = DLArrayHandle()
+    if ctx.device_type == 2:
+        _gpu_alloc_calls += 1
     check_call(_LIB.DLArrayAlloc(
         shape, ndim, ctx, ctypes.byref(handle)))
     return NDArray(handle)
+
+
+def empty_cache(ctx=gpu(0)):
+    """Release all cached free blocks in the device caching memory pool."""
+    if hasattr(_LIB, "DLGpuEmptyCache"):
+        check_call(_LIB.DLGpuEmptyCache())
+
+
+def reset_memory_stats(ctx=gpu(0)):
+    """Reset peak memory and allocation counters for the device caching pool."""
+    global _gpu_alloc_calls, _base_malloc_count
+    if hasattr(_LIB, "DLGpuResetPeakMemoryStats"):
+        check_call(_LIB.DLGpuResetPeakMemoryStats())
+    if hasattr(_LIB, "DLGpuGetMemoryStats"):
+        curr_bytes = ctypes.c_size_t(0)
+        peak_bytes = ctypes.c_size_t(0)
+        reserved_bytes = ctypes.c_size_t(0)
+        malloc_calls = ctypes.c_size_t(0)
+        check_call(_LIB.DLGpuGetMemoryStats(
+            ctypes.byref(curr_bytes),
+            ctypes.byref(peak_bytes),
+            ctypes.byref(reserved_bytes),
+            ctypes.byref(malloc_calls),
+        ))
+        _base_malloc_count = int(malloc_calls.value)
+    _gpu_alloc_calls = 0
+
+
+def memory_stats(ctx=gpu(0)):
+    """Query current/peak bytes and allocator cache hit/malloc statistics."""
+    curr_bytes = ctypes.c_size_t(0)
+    peak_bytes = ctypes.c_size_t(0)
+    reserved_bytes = ctypes.c_size_t(0)
+    malloc_calls = ctypes.c_size_t(0)
+    if hasattr(_LIB, "DLGpuGetMemoryStats"):
+        check_call(_LIB.DLGpuGetMemoryStats(
+            ctypes.byref(curr_bytes),
+            ctypes.byref(peak_bytes),
+            ctypes.byref(reserved_bytes),
+            ctypes.byref(malloc_calls),
+        ))
+    delta_mallocs = max(0, int(malloc_calls.value) - _base_malloc_count)
+    hits = max(0, _gpu_alloc_calls - delta_mallocs)
+    return {
+        "active_bytes": int(curr_bytes.value),
+        "peak_bytes": int(peak_bytes.value),
+        "current_bytes_in_use": int(curr_bytes.value),
+        "peak_bytes_in_use": int(peak_bytes.value),
+        "reserved_bytes": int(reserved_bytes.value),
+        "cuda_malloc_calls": delta_mallocs,
+        "total_cuda_malloc_calls": int(malloc_calls.value),
+        "pool_Cache_hits": hits,
+        "pool_cache_hits": hits,
+    }

@@ -32,9 +32,8 @@ private:
   DeviceAPIManager() {
     std::fill(api_.begin(), api_.end(), nullptr);
     static CPUDeviceAPI cpu_device_api_inst;
-    static CUDADeviceAPI gpu_device_api_inst;
     api_[kCPU] = static_cast<DeviceAPI *>(&cpu_device_api_inst);
-    api_[kGPU] = static_cast<DeviceAPI *>(&gpu_device_api_inst);
+    api_[kGPU] = static_cast<DeviceAPI *>(CUDADeviceAPI::Global());
   }
   // Get global static variable.
   static DeviceAPIManager *Global() {
@@ -136,3 +135,37 @@ int DLArrayCopyFromTo(DLArrayHandle from, DLArrayHandle to,
                                              from->ctx, to->ctx, stream);
   API_END();
 }
+
+int DLGpuGetMemoryStats(size_t *active_bytes, size_t *peak_bytes,
+                        size_t *reserved_bytes, size_t *malloc_count) {
+  API_BEGIN();
+  CUDADeviceAPI *api = CUDADeviceAPI::Global();
+  if (active_bytes)
+    *active_bytes = api->GetActiveBytes();
+  if (peak_bytes)
+    *peak_bytes = api->GetPeakBytes();
+  if (reserved_bytes)
+    *reserved_bytes = api->GetReservedBytes();
+  if (malloc_count)
+    *malloc_count = api->GetMallocCount();
+  API_END();
+}
+
+int DLGpuResetPeakMemoryStats() {
+  API_BEGIN();
+  CUDADeviceAPI::Global()->ResetPeakStats();
+  API_END();
+}
+
+int DLGpuEmptyCache() {
+  API_BEGIN();
+  CUDADeviceAPI::Global()->EmptyCache();
+  API_END();
+}
+
+int DLGpuSetUseMemoryPool(bool use_pool) {
+  API_BEGIN();
+  CUDADeviceAPI::Global()->SetUsePool(use_pool);
+  API_END();
+}
+

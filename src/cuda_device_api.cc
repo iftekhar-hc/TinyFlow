@@ -18,6 +18,11 @@
 namespace dlsys {
 namespace runtime {
 
+CUDADeviceAPI *CUDADeviceAPI::Global() {
+  static CUDADeviceAPI inst;
+  return &inst;
+}
+
 static void GPUCopy(const void *from, void *to, size_t size,
                     cudaMemcpyKind kind, cudaStream_t stream) {
   if (stream != 0) {
@@ -29,23 +34,84 @@ static void GPUCopy(const void *from, void *to, size_t size,
 
 void *CUDADeviceAPI::AllocDataSpace(DLContext ctx, size_t size,
                                     size_t alignment) {
-  // std::cout << "allocating cuda data" << std::endl;
   CUDA_CALL(cudaSetDevice(ctx.device_id));
-  assert((256 % alignment) == 0U); // << "CUDA space is aligned at 256 bytes";
-  void *ret;
-  CUDA_CALL(cudaMalloc(&ret, size));
+  assert((256 % alignment) == 0U);
+  // Round up to 256-byte alignment (minimum 256 bytes)
+  size_t rounded_size = ((size + 255) / 256) * 256;
+  if (rounded_size == 0) {
+    rounded_size = 256;
+  }
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  void *ret = nullptr;
+  if (use_pool_) {
+    auto it = free_bins_.find(rounded_size);
+    if (it != free_bins_.end() && !it->second.empty()) {
+      ret = it->second.back();
+      it->second.pop_back();
+    }
+  }
+  if (ret == nullptr) {
+    CUDA_CALL(cudaMalloc(&ret, rounded_size));
+    reserved_bytes_ += rounded_size;
+    malloc_count_ += 1;
+  }
+  allocated_sizes_[ret] = rounded_size;
+  active_bytes_ += rounded_size;
+  if (active_bytes_ > peak_bytes_) {
+    peak_bytes_ = active_bytes_;
+  }
   return ret;
 }
 
 void CUDADeviceAPI::FreeDataSpace(DLContext ctx, void *ptr) {
+  if (ptr == nullptr) {
+    return;
+  }
   CUDA_CALL(cudaSetDevice(ctx.device_id));
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = allocated_sizes_.find(ptr);
+  if (it != allocated_sizes_.end()) {
+    size_t rounded_size = it->second;
+    allocated_sizes_.erase(it);
+    if (active_bytes_ >= rounded_size) {
+      active_bytes_ -= rounded_size;
+    } else {
+      active_bytes_ = 0;
+    }
+    if (use_pool_) {
+      free_bins_[rounded_size].push_back(ptr);
+      return;
+    } else {
+      if (reserved_bytes_ >= rounded_size) {
+        reserved_bytes_ -= rounded_size;
+      }
+    }
+  }
   CUDA_CALL(cudaFree(ptr));
+}
+
+void CUDADeviceAPI::EmptyCache() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (auto &kv : free_bins_) {
+    size_t bin_size = kv.first;
+    for (void *ptr : kv.second) {
+      cudaError_t e = cudaFree(ptr);
+      (void)e;
+      if (reserved_bytes_ >= bin_size) {
+        reserved_bytes_ -= bin_size;
+      } else {
+        reserved_bytes_ = 0;
+      }
+    }
+    kv.second.clear();
+  }
+  free_bins_.clear();
 }
 
 void CUDADeviceAPI::CopyDataFromTo(const void *from, void *to, size_t size,
                                    DLContext ctx_from, DLContext ctx_to,
                                    DLStreamHandle stream) {
-  // std::cout << "copying cuda data" << std::endl;
   cudaStream_t cu_stream = static_cast<cudaStream_t>(stream);
   if (ctx_from.device_type == kGPU && ctx_to.device_type == kGPU) {
     CUDA_CALL(cudaSetDevice(ctx_from.device_id));

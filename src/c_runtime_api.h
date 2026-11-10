@@ -175,6 +175,15 @@ DLSYS_EXTERN_C {
   int DLGpuSoftmaxCrossEntropy(const DLArrayHandle input_a,
                                const DLArrayHandle input_b,
                                DLArrayHandle output);
+
+  /*!
+   * \brief CUDA Memory Pool & Telemetry APIs
+   */
+  int DLGpuGetMemoryStats(size_t *active_bytes, size_t *peak_bytes,
+                          size_t *reserved_bytes, size_t *malloc_count);
+  int DLGpuResetPeakMemoryStats();
+  int DLGpuEmptyCache();
+  int DLGpuSetUseMemoryPool(bool use_pool);
 } // DLSYS_EXTERN_C
 
 #endif // DLSYS_RUNTIME_C_RUNTIME_API_H_
