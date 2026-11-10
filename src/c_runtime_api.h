@@ -177,6 +177,115 @@ DLSYS_EXTERN_C {
                                DLArrayHandle output);
 
   /*!
+   * \brief Naive matrix multiply (baseline for benchmarking).
+   */
+  int DLGpuMatrixMultiplyNaive(const DLArrayHandle matA, bool transposeA,
+                               const DLArrayHandle matB, bool transposeB,
+                               DLArrayHandle matC);
+
+  /*!
+   * \brief Shared-memory + register-tiled matrix multiply.
+   */
+  int DLGpuMatrixMultiplyShared(const DLArrayHandle matA, bool transposeA,
+                                const DLArrayHandle matB, bool transposeB,
+                                DLArrayHandle matC);
+
+  /*!
+   * \brief Fused Linear + Bias + Activation: Y = Act(X @ W + b)
+   * \param input (M, K) input matrix X
+   * \param weight (K, N) weight matrix W
+   * \param bias (N,) or (1, N) bias vector b (can be NULL if no bias)
+   * \param output (M, N) output matrix Y
+   * \param act_type 0 = Identity, 1 = ReLU, 2 = GELU
+   */
+  int DLGpuFusedLinear(const DLArrayHandle input, const DLArrayHandle weight,
+                       const DLArrayHandle bias, DLArrayHandle output,
+                       int act_type);
+
+  /*!
+   * \brief Fused LayerNorm forward pass:
+   *  y = gamma * (x - mean) / sqrt(var + eps) + beta
+   * \param input (M, N) input tensor
+   * \param gamma (N,) scale parameter
+   * \param beta (N,) shift parameter
+   * \param output (M, N) normalized output
+   * \param mean optional (M,) per-row mean buffer (can be NULL)
+   * \param rstd optional (M,) per-row reciprocal std buffer (can be NULL)
+   * \param eps epsilon for numerical stability
+   */
+  int DLGpuLayerNorm(const DLArrayHandle input, const DLArrayHandle gamma,
+                     const DLArrayHandle beta, DLArrayHandle output,
+                     DLArrayHandle mean, DLArrayHandle rstd, float eps);
+
+  /*!
+   * \brief Fused LayerNorm backward pass:
+   *  Computes dx (M, N), dgamma (N,), dbeta (N,)
+   */
+  int DLGpuLayerNormGrad(const DLArrayHandle input, const DLArrayHandle in_grad,
+                         const DLArrayHandle gamma, DLArrayHandle grad_x,
+                         DLArrayHandle grad_gamma, DLArrayHandle grad_beta,
+                         float eps);
+
+  /*!
+   * \brief Fused Adaptive LayerNorm (AdaLN) forward pass:
+   *  y = (1 + scale) * (x - mean) / sqrt(var + eps) + shift
+   * \param input (M, N) input tensor
+   * \param scale (M, N) or (N,) adaptive scale tensor
+   * \param shift (M, N) or (N,) adaptive shift tensor
+   * \param output (M, N) modulated output
+   * \param eps epsilon for numerical stability
+   */
+  int DLGpuAdaLN(const DLArrayHandle input, const DLArrayHandle scale,
+                 const DLArrayHandle shift, DLArrayHandle output, float eps);
+
+  /*!
+   * \brief Fused Adaptive LayerNorm (AdaLN) backward pass:
+   *  Computes dx (M, N), dscale (M, N) or (N,), dshift (M, N) or (N,)
+   */
+  int DLGpuAdaLNGrad(const DLArrayHandle input, const DLArrayHandle in_grad,
+                     const DLArrayHandle scale, DLArrayHandle grad_x,
+                     DLArrayHandle grad_scale, DLArrayHandle grad_shift,
+                     float eps);
+
+  /*!
+   * \brief GELU activation forward pass (tanh approximation).
+   */
+  int DLGpuGelu(const DLArrayHandle input, DLArrayHandle output);
+
+  /*!
+   * \brief GELU activation backward pass.
+   */
+  int DLGpuGeluGrad(const DLArrayHandle input, const DLArrayHandle in_grad,
+                    DLArrayHandle output);
+
+  /*!
+   * \brief Fused Softmax Cross-Entropy backward pass:
+   *  dx = (softmax(logits) - labels) * (grad_out[0] / nrow)
+   */
+  int DLGpuSoftmaxCrossEntropyGrad(const DLArrayHandle logits,
+                                   const DLArrayHandle labels,
+                                   const DLArrayHandle grad_out,
+                                   DLArrayHandle output);
+
+  /*!
+   * \brief Broadcast a (1,) scalar GPU tensor to output tensor on device
+   *  without host-device synchronization.
+   */
+  int DLGpuBroadcastScalar(const DLArrayHandle scalar, DLArrayHandle output);
+
+  /*!
+   * \brief Unfused LayerNorm components for 5-kernel baseline comparison:
+   *  Row-wise mean/variance reduction, normalize, affine scale/shift.
+   */
+  int DLGpuReduceMeanAxisOne(const DLArrayHandle input, DLArrayHandle output);
+  int DLGpuBroadcastAxisOne(const DLArrayHandle input, DLArrayHandle output);
+  int DLGpuMatrixElementwiseSub(const DLArrayHandle matA,
+                                const DLArrayHandle matB, DLArrayHandle output);
+  int DLGpuMatrixElementwiseDiv(const DLArrayHandle matA,
+                                const DLArrayHandle matB, DLArrayHandle output);
+  int DLGpuSqrt(const DLArrayHandle input, DLArrayHandle output);
+
+  /*!
    * \brief CUDA Memory Pool & Telemetry APIs
    */
   int DLGpuGetMemoryStats(size_t *active_bytes, size_t *peak_bytes,
