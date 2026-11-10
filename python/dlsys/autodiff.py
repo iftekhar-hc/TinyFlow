@@ -277,56 +277,40 @@ class MatMulOp(Op):
     def gradient(self, node, output_grad):
         if ((node.matmul_attr_trans_A is False) and
                 (node.matmul_attr_trans_B is False)):
-            # if Y=AB, then dA=dY B^T, dB=A^T dY
             lhs_grad = matmul_op(
                 output_grad, node.inputs[1], trans_A=False, trans_B=True)
             rhs_grad = matmul_op(
                 node.inputs[0], output_grad, trans_A=True, trans_B=False)
         elif ((node.matmul_attr_trans_A is True) and
                 (node.matmul_attr_trans_B is False)):
-            # if Y=A^T B, then dA=(dY B^T)^T=B dY^T, dB=A^T dY
             lhs_grad = matmul_op(
                 node.inputs[1], output_grad, trans_A=False, trans_B=True)
             rhs_grad = matmul_op(
-                node.inputs[0], output_grad, trans_A=True, trans_B=False)
+                node.inputs[0], output_grad, trans_A=False, trans_B=False)
         elif ((node.matmul_attr_trans_A is False) and
                 (node.matmul_attr_trans_B is True)):
-            # if Y=A B^T, then dA=dY B^T, dB=(A^T dY)^T=dY^T A
             lhs_grad = matmul_op(
-                output_grad, node.inputs[1], trans_A=False, trans_B=True)
+                output_grad, node.inputs[1], trans_A=False, trans_B=False)
             rhs_grad = matmul_op(
                 output_grad, node.inputs[0], trans_A=True, trans_B=False)
         elif ((node.matmul_attr_trans_A is True) and
                 (node.matmul_attr_trans_B is True)):
-            # if Y=A^T B^T, then dA=(dY B^T)^T=B dY^T, dB=(A^T dY)^T=dY^T A
             lhs_grad = matmul_op(
-                node.inputs[1], output_grad, trans_A=False, trans_B=True)
+                node.inputs[1], output_grad, trans_A=True, trans_B=True)
             rhs_grad = matmul_op(
-                output_grad, node.inputs[0], trans_A=True, trans_B=False)
+                output_grad, node.inputs[0], trans_A=True, trans_B=True)
         return [lhs_grad, rhs_grad]
 
     def infer_shape(self, node, input_shapes):
-        """TODO: Your code here"""
-        axis_0_dim = 0
-        axis_1_dim = 0
-        if node.matmul_attr_trans_A is False and \
-           node.matmul_attr_trans_B is False:
-            axis_0_dim = input_shapes[0][0]
-            axis_1_dim = input_shapes[1][1]
-        elif node.matmul_attr_trans_A is False and \
-             node.matmul_attr_trans_B is True:
-            axis_0_dim = input_shapes[0][0]
-            axis_1_dim = input_shapes[1][0]
-        elif node.matmul_attr_trans_A is True and \
-             node.matmul_attr_trans_B is False:
-            axis_0_dim = input_shapes[0][1]
-            axis_1_dim = input_shapes[1][1]
-        elif node.matmul_attr_trans_A is True and \
-             node.matmul_attr_trans_B is True:
-            axis_0_dim = input_shapes[0][1]
-            axis_1_dim = input_shapes[1][0]
-        output_shape = (axis_0_dim, axis_1_dim)
-        return output_shape
+        assert len(input_shapes) == 2
+        shape_A = input_shapes[0]
+        shape_B = input_shapes[1]
+        if node.matmul_attr_trans_A:
+            shape_A = (shape_A[1], shape_A[0])
+        if node.matmul_attr_trans_B:
+            shape_B = (shape_B[1], shape_B[0])
+        assert shape_A[1] == shape_B[0]
+        return (shape_A[0], shape_B[1])
 
 class PlaceholderOp(Op):
     def __call__(self):
