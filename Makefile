@@ -1,4 +1,4 @@
-CUDA_DIR = /usr/local/cuda
+CUDA_DIR ?= /usr/local/cuda
 
 CC_SRCS := $(wildcard src/*.cc)
 CC_OBJS := ${CC_SRCS:src/%.cc=build/obj/%.o}
@@ -8,15 +8,20 @@ OBJS := $(CC_OBJS) $(CUDA_OBJS)
 
 CC = g++
 WARNINGS = -Wall -Wfatal-errors -Wno-unused -Wno-unused-result
-CC_FLAGS = -std=c++11 -fPIC $(WARNINGS) -I$(CUDA_DIR)/include
+CC_FLAGS = -std=c++11 -O3 -fPIC $(WARNINGS) -I$(CUDA_DIR)/include
 LD_FLAGS = -L$(CUDA_DIR)/lib64 -lcuda -lcudart -lcublas
 
-NVCC = nvcc
-NVCC_FLAGS = -std=c++11 --compiler-options '-fPIC'
-ARCH = -gencode arch=compute_30,code=sm_30 \
-       -gencode arch=compute_35,code=sm_35 \
-       -gencode arch=compute_50,code=[sm_50,compute_50] \
-       -gencode arch=compute_52,code=[sm_52,compute_52]
+NVCC = $(CUDA_DIR)/bin/nvcc
+NVCC_FLAGS = -std=c++11 -O3 -lineinfo --compiler-options '-fPIC'
+
+# Auto-detect installed GPU SM architecture via nvidia-smi (fallback to sm_80)
+DETECTED_SM := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n 1 | tr -d '.')
+ifeq ($(DETECTED_SM),)
+ARCH = -gencode arch=compute_70,code=sm_70 \
+       -gencode arch=compute_80,code=[sm_80,compute_80]
+else
+ARCH = -gencode arch=compute_$(DETECTED_SM),code=[sm_$(DETECTED_SM),compute_$(DETECTED_SM)]
+endif
 
 all: build/lib/libc_runtime_api.so
 
@@ -35,4 +40,5 @@ build/obj/%.o: src/%.cu
 clean:
 	rm -rf build
 
-.PHONY: clean
+.PHONY: all clean
+
